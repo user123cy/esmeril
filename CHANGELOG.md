@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+### Changed
+- Replaced unicode dashes in the docs with plain hyphens and restored the code comments that were missing.
+
 ## 0.1.0
 
 ### Added
