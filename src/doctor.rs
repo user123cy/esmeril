@@ -81,7 +81,14 @@ pub fn run(json: bool) -> anyhow::Result<DoctorReport> {
 
 fn tool_version(name: &str) -> Option<String> {
     let output = Command::new(name).arg("--version").output().ok()?;
-    let text = String::from_utf8_lossy(&output.stdout);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // Some tools (notably on Windows) print the version to stderr.
+    let text = if stdout.trim().is_empty() {
+        stderr
+    } else {
+        stdout
+    };
     let line = text.lines().next()?.trim();
     Some(line.to_string())
 }

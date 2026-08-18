@@ -7,7 +7,7 @@
 
 Scaffold, check and inspect Roblox Luau projects from the terminal.
 
-Seven commands, one binary:
+Eight commands, one binary:
 
 - `esmeril init` - scaffold a modern Roblox project: Rojo, Selene, StyLua, Aftman, Wally and a CI workflow, preconfigured
 - `esmeril check` - verify the tooling configs and structure, get an A-F grade; exit code 1 on a failing grade, safe to gate CI on
@@ -16,6 +16,7 @@ Seven commands, one binary:
 - `esmeril update` - bump `wally.toml` requirements to the latest published versions; `--write` applies, dry-run by default
 - `esmeril fmt` - format with StyLua and lint with Selene; `--check` only reports
 - `esmeril build` - run check, then build with Rojo (`game.rbxl` or `lib.rbxm`)
+- `esmeril completions <shell>` - generate shell completion scripts (bash, zsh, fish, powershell, elvish)
 
 ## install
 
@@ -45,7 +46,7 @@ rojo serve       # connect from Studio
 - `wally.toml` - package manifest
 - `.github/workflows/ci.yml` - lint + format + build on every push
 
-Flags: `--strict` sets the Luau language mode to Strict instead of NonStrict, `--lib` scaffolds a library package (a single `src/init.lua` module, ready to publish to Wally) instead of a game, `--force` overwrites a non-empty target directory.
+Flags: `--strict` sets the Luau language mode to Strict instead of NonStrict, `--lib` scaffolds a library package (a single `src/init.lua` module, ready to publish to Wally) instead of a game, `--force` overwrites a non-empty target directory. The directory name is kebab-cased for the `wally.toml` package name (`esmeril init "My Game"` → `user/my-game`), so a scaffolded project always passes its own check.
 
 ## check
 
@@ -54,6 +55,7 @@ esmeril check
 esmeril check path/to/project
 esmeril check --fix
 esmeril check --json
+esmeril check --markdown
 ```
 
 `esmeril check` validates the project and grades it A-F. `--fix` creates the standard files that are missing instead of only reporting them - point it at any messy project and watch the grade jump from F to A. It never overwrites an existing file; a config that exists but is invalid is listed as needing manual attention.
@@ -63,14 +65,14 @@ esmeril check --json
 | `default.project.json` | 15 | missing, invalid JSON, or no `name` |
 | project paths | 10 | a `$path` target in the tree does not exist |
 | `src/` | 10 | missing |
-| `.luaurc` | 10 | missing or invalid JSON |
+| `.luaurc` | 10 | missing, invalid JSON, or no valid `languageMode` (`NonStrict`/`Strict`) |
 | `.selene.toml` | 15 | missing or invalid TOML |
 | `stylua.toml` | 15 | missing or invalid TOML |
-| `aftman.toml` | 15 | missing, invalid TOML, or no rojo + selene + stylua under `[tools]` |
-| `wally.toml` | 5 | missing or invalid TOML |
+| `aftman.toml` | 15 | missing, invalid TOML, or no rojo + selene + stylua as `owner/repo@tag` under `[tools]` |
+| `wally.toml` | 5 | missing, invalid TOML, or no complete `[package]` (scoped name, version, registry, realm) |
 | `.github/workflows` | 5 | no workflow file |
 
-Missing `wally.toml` or the CI workflow are recommended, not required - a project without both still grades A (90/100). `README.md`, `.gitignore` and whether `rojo`/`selene`/`stylua` are on `PATH` are shown as info, not scored.
+Missing `wally.toml` or the CI workflow are recommended, not required - a project without both still grades A (90/100). `README.md`, `.gitignore` and whether `rojo`/`selene`/`stylua` are on `PATH` are shown as info, not scored. `--markdown` prints the report as a markdown table, ready to paste into a PR or README.
 
 ## deps
 

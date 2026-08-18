@@ -46,7 +46,11 @@ pub fn run(args: &UpdateArgs, json: bool) -> anyhow::Result<UpdateReport> {
             toml::Value::String(s) => s.clone(),
             other => other.to_string(),
         };
-        let deps::Target::Registry { name, req } = deps::resolve(alias, spec_value) else {
+        let target = deps::resolve(alias, spec_value);
+        if !json && matches!(&target, deps::Target::Registry { .. }) {
+            eprintln!("  checking {} ({section}) ...", alias.dimmed());
+        }
+        let deps::Target::Registry { name, req } = target else {
             continue;
         };
         let url = format!("{base}/{name}");

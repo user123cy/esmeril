@@ -77,8 +77,28 @@ fn luaurc(mode: &str) -> String {
 
 fn wally_toml(name: &str) -> String {
     format!(
-        "[package]\nname = \"user/{name}\"\nversion = \"0.1.0\"\nregistry = \"https://github.com/UpliftGames/wally-index\"\nrealm = \"shared\"\n\n[dependencies]\n"
+        "[package]\nname = \"user/{}\"\nversion = \"0.1.0\"\nregistry = \"https://github.com/UpliftGames/wally-index\"\nrealm = \"shared\"\n\n[dependencies]\n",
+        slugify(name)
     )
+}
+
+// Wally package names allow lowercase alphanumerics and dashes only. Kebab-casing
+// the directory name keeps a scaffolded project valid even for names like "My Game".
+fn slugify(name: &str) -> String {
+    let mut slug = String::new();
+    for c in name.chars() {
+        if c.is_ascii_alphanumeric() {
+            slug.push(c.to_ascii_lowercase());
+        } else if !slug.ends_with('-') {
+            slug.push('-');
+        }
+    }
+    let slug = slug.trim_matches('-').to_string();
+    if slug.is_empty() {
+        "game".to_string()
+    } else {
+        slug
+    }
 }
 
 fn readme(name: &str, lib: bool) -> String {
@@ -98,7 +118,7 @@ const SELENE: &str = "std = \"roblox\"\n";
 const STYLUA: &str =
     "indent_type = \"Tabs\"\nindent_width = 4\nquote_style = \"AutoPreferSingle\"\n";
 
-const AFTMAN: &str = "[tools]\nrojo = \"rojo-rbx/rojo@7.7.0\"\nselene = \"Kampfkarren/selene@0.31.0\"\nstylua = \"JohnnyMorganz/StyLua@2.5.0\"\n";
+const AFTMAN: &str = "[tools]\nrojo = \"rojo-rbx/rojo@7.7.0\"\nselene = \"Kampfkarren/selene@0.31.0\"\nstylua = \"JohnnyMorganz/StyLua@2.5.2\"\n";
 
 const GITIGNORE: &str = "target/\n.lune/\n*.rbxl\n*.rbxlx\n*.rbxmx\n*.rbxm\nThumbs.db\n.DS_Store\n";
 
@@ -109,7 +129,7 @@ fn ci(lib: bool) -> String {
         "      - run: rojo build -o game.rbxl\n"
     };
     format!(
-        "name: ci\n\non:\n  push:\n  pull_request:\n\njobs:\n  luau:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: Roblox/setup-aftman-action@v2\n        with:\n          token: ${{{{ secrets.GITHUB_TOKEN }}}}\n      - run: aftman install\n      - run: selene src\n      - run: stylua --check src\n{build}"
+        "name: ci\n\non:\n  push:\n  pull_request:\n\njobs:\n  luau:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v7\n      - uses: Roblox/setup-aftman-action@v2\n        with:\n          token: ${{{{ secrets.GITHUB_TOKEN }}}}\n      - run: aftman install\n      - run: selene src\n      - run: stylua --check src\n{build}"
     )
 }
 
@@ -120,3 +140,37 @@ const SERVER: &str = "-- server entry point (ServerScriptService)\nprint(\"serve
 const CLIENT: &str = "-- client entry point (StarterPlayerScripts)\nprint(\"client started\")\n";
 
 const LIB_ENTRY: &str = "-- module entry point; requires return this table\nreturn {}\n";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn slugify_kebab_cases_names() {
+        assert_eq!(slugify("mygame"), "mygame");
+        assert_eq!(slugify("My Game"), "my-game");
+        assert_eq!(slugify("my__game"), "my-game");
+        assert_eq!(slugify("My-Game 2"), "my-game-2");
+        assert_eq!(slugify("!!!"), "game");
+    }
+
+    #[test]
+    fn wally_name_is_always_valid() {
+        for name in ["My Game", "escarlate!", "foo_bar-baz", "café"] {
+            let wally = wally_toml(name);
+            let value: toml::Value = toml::from_str(&wally).unwrap();
+            let pkg = value.get("package").and_then(|p| p.as_table()).unwrap();
+            let name = pkg.get("name").and_then(|n| n.as_str()).unwrap();
+            let mut parts = name.split('/');
+            let scope = parts.next().unwrap();
+            let pkg_name = parts.next().unwrap();
+            assert!(!scope.is_empty() && parts.next().is_none());
+            assert!(
+                pkg_name
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+                    && !pkg_name.is_empty()
+            );
+        }
+    }
+}

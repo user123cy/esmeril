@@ -5,13 +5,21 @@ use serde::Serialize;
 
 use crate::cli::CheckArgs;
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct Report {
     pub path: String,
     pub score: u8,
     pub grade: char,
     pub checks: Vec<CheckRow>,
     pub info: Vec<InfoRow>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fix: Option<FixSummary>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FixSummary {
+    pub created: Vec<String>,
+    pub needs_attention: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -19,11 +27,13 @@ pub struct CheckRow {
     pub label: &'static str,
     pub weight: u8,
     pub ok: bool,
+    /// ok | missing | invalid | broken
+    pub state: &'static str,
     pub detail: Option<String>,
     pub fix: Option<&'static str>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct InfoRow {
     pub label: String,
     pub ok: bool,
@@ -45,10 +55,20 @@ impl Report {
 
 pub fn run(args: &CheckArgs, json: bool) -> anyhow::Result<Report> {
     let root = Path::new(&args.path);
+    if !args.fix && !root.exists() {
+        anyhow::bail!(
+            "path '{}' does not exist (use --fix to scaffold it)",
+            args.path
+        );
+    }
     let report = inspect(root);
     if args.fix {
         let fix = crate::fix::apply(root)?;
-        let after = inspect(root);
+        let mut after = inspect(root);
+        after.fix = Some(FixSummary {
+            created: fix.created.clone(),
+            needs_attention: fix.needs_attention.clone(),
+        });
         if json {
             println!("{}", serde_json::to_string_pretty(&after)?);
         } else if args.markdown {
@@ -91,9 +111,10 @@ pub fn inspect(root: &Path) -> Report {
     let mut score = 0u8;
     let mut push = |label: &'static str,
                     weight: u8,
-                    ok: bool,
+                    state: &'static str,
                     detail: Option<String>,
                     fix: Option<&'static str>| {
+        let ok = state == "ok";
         if ok {
             score += weight;
         }
@@ -101,6 +122,7 @@ pub fn inspect(root: &Path) -> Report {
             label,
             weight,
             ok,
+            state,
             detail,
             fix,
         });
@@ -118,67 +140,119 @@ pub fn inspect(root: &Path) -> Report {
     let paths = project_paths(root);
     let paths_ok = !paths.is_empty() && paths.iter().all(|p| root.join(p).exists());
     let paths_detail = (!paths.is_empty()).then(|| paths.join(", "));
+    let project_state = if project_text.is_none() {
+        "missing"
+    } else if project_value.is_some() && name_ok {
+        "ok"
+    } else {
+        "invalid"
+    };
+    let paths_state = if project_value.is_none() {
+        if project_text.is_none() {
+            "missing"
+        } else {
+            "invalid"
+        }
+    } else if paths_ok {
+        "ok"
+    } else {
+        "broken"
+    };
 
     push(
         "default.project.json",
         15,
-        project_value.is_some() && name_ok,
+        project_state,
         None,
         Some("add default.project.json with a name and a tree"),
     );
     push(
         "project paths",
         10,
-        paths_ok,
+        paths_state,
         paths_detail,
         Some("create the directories referenced by $path"),
     );
     push(
         "src/",
         10,
-        root.join("src").is_dir(),
+        if root.join("src").is_dir() {
+            "ok"
+        } else {
+            "missing"
+        },
         None,
         Some("create src/ for Rojo to sync"),
     );
+    let luaurc = root.join(".luaurc");
+    let luaurc_state = if !luaurc.exists() {
+        "missing"
+    } else if luaurc_ok(root) {
+        "ok"
+    } else if parses_json(&luaurc) {
+        "broken"
+    } else {
+        "invalid"
+    };
     push(
         ".luaurc",
         10,
-        parses_json(&root.join(".luaurc")),
+        luaurc_state,
         None,
         Some("add .luaurc with languageMode NonStrict or Strict"),
     );
     push(
         ".selene.toml",
         15,
-        parses_toml(&root.join(".selene.toml")),
+        toml_state(&root.join(".selene.toml")),
         None,
         Some("add .selene.toml with std = \"roblox\""),
     );
     push(
         "stylua.toml",
         15,
-        parses_toml(&root.join("stylua.toml")),
+        toml_state(&root.join("stylua.toml")),
         None,
         Some("add stylua.toml"),
     );
+    let aftman = root.join("aftman.toml");
+    let aftman_state = if !aftman.exists() {
+        "missing"
+    } else if aftman_ok(root) {
+        "ok"
+    } else if parses_toml(&aftman) {
+        "broken"
+    } else {
+        "invalid"
+    };
     push(
         "aftman.toml",
         15,
-        aftman_ok(root),
+        aftman_state,
         None,
-        Some("add aftman.toml with rojo, selene and stylua under [tools]"),
+        Some("add aftman.toml with rojo, selene and stylua as owner/repo@tag under [tools]"),
     );
+    let wally = root.join("wally.toml");
+    let wally_state = if !wally.exists() {
+        "missing"
+    } else if wally_ok(root) {
+        "ok"
+    } else if parses_toml(&wally) {
+        "broken"
+    } else {
+        "invalid"
+    };
     push(
         "wally.toml",
         5,
-        parses_toml(&root.join("wally.toml")),
+        wally_state,
         None,
-        Some("add wally.toml"),
+        Some("add wally.toml with [package] name, version, registry and realm"),
     );
     push(
         ".github/workflows",
         5,
-        has_ci(root),
+        if has_ci(root) { "ok" } else { "missing" },
         None,
         Some("add a CI workflow, e.g. with Roblox/setup-aftman-action"),
     );
@@ -205,6 +279,7 @@ pub fn inspect(root: &Path) -> Report {
         grade: grade(score),
         checks,
         info,
+        fix: None,
     }
 }
 
@@ -226,6 +301,12 @@ fn render_markdown(r: &Report) -> String {
         out.push_str(&format!("| {} | {} | {} |\n", c.label, c.weight, status));
     }
     out.push_str(&format!("\n**grade: {} ({}/100)**\n", r.grade, r.score));
+    let info: Vec<String> = r
+        .info
+        .iter()
+        .map(|i| format!("{} {}", if i.ok { "✓" } else { "✗" }, i.label))
+        .collect();
+    out.push_str(&format!("info: {}\n", info.join(", ")));
     out
 }
 
@@ -267,13 +348,102 @@ fn aftman_ok(root: &Path) -> bool {
         Some(t) => t,
         None => return false,
     };
-    tools.contains_key("rojo") && tools.contains_key("selene") && tools.contains_key("stylua")
+    ["rojo", "selene", "stylua"].iter().all(|name| {
+        tools
+            .get(*name)
+            .and_then(|v| v.as_str())
+            .is_some_and(valid_tool_spec)
+    })
+}
+
+// Aftman pins are "owner/repo@tag"; a trailing ".exe" is allowed for Windows tools.
+fn valid_tool_spec(spec: &str) -> bool {
+    let Some((name, tag)) = spec.rsplit_once('@') else {
+        return false;
+    };
+    if tag.is_empty() {
+        return false;
+    }
+    let name = name.strip_suffix(".exe").unwrap_or(name);
+    let mut parts = name.split('/');
+    let owner = parts.next().unwrap_or("");
+    let repo = parts.next().unwrap_or("");
+    !owner.is_empty() && !repo.is_empty() && parts.next().is_none()
+}
+
+// A wally.toml only earns its points when [package] is complete enough for wally itself.
+fn wally_ok(root: &Path) -> bool {
+    let text = match std::fs::read_to_string(root.join("wally.toml")) {
+        Ok(t) => t,
+        Err(_) => return false,
+    };
+    let value: toml::Value = match toml::from_str(&text) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    let Some(pkg) = value.get("package").and_then(|p| p.as_table()) else {
+        return false;
+    };
+    let name_ok = pkg.get("name").and_then(|n| n.as_str()).is_some_and(|n| {
+        let mut parts = n.split('/');
+        let scope = parts.next().unwrap_or("");
+        let name = parts.next().unwrap_or("");
+        !scope.is_empty() && !name.is_empty() && parts.next().is_none()
+    });
+    let version_ok = pkg
+        .get("version")
+        .and_then(|v| v.as_str())
+        .and_then(crate::deps::parse_version)
+        .is_some();
+    let registry_ok = pkg
+        .get("registry")
+        .and_then(|r| r.as_str())
+        .is_some_and(|r| r.starts_with("https://"));
+    let realm_ok = pkg
+        .get("realm")
+        .and_then(|r| r.as_str())
+        .is_some_and(|r| matches!(r, "shared" | "server" | "client"));
+    name_ok && version_ok && registry_ok && realm_ok
 }
 
 fn parses_toml(path: &Path) -> bool {
     std::fs::read_to_string(path)
         .map(|t| toml::from_str::<toml::Value>(&t).is_ok())
         .unwrap_or(false)
+}
+
+fn toml_state(path: &Path) -> &'static str {
+    if !path.exists() {
+        "missing"
+    } else if parses_toml(path) {
+        "ok"
+    } else {
+        "invalid"
+    }
+}
+
+fn luaurc_ok(root: &Path) -> bool {
+    let text = match std::fs::read_to_string(root.join(".luaurc")) {
+        Ok(t) => t,
+        Err(_) => return false,
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return false;
+    };
+    let Some(lang) = value.get("languageMode") else {
+        return false;
+    };
+    // languageMode is usually an object mapping paths to modes, but a plain
+    // string is accepted too. Only NonStrict and Strict are valid Luau modes.
+    let modes: Vec<&serde_json::Value> = match lang {
+        serde_json::Value::String(_) => vec![lang],
+        serde_json::Value::Object(map) => map.values().collect(),
+        _ => return false,
+    };
+    !modes.is_empty()
+        && modes
+            .iter()
+            .all(|m| matches!(m.as_str(), Some("NonStrict" | "Strict")))
 }
 
 fn parses_json(path: &Path) -> bool {
@@ -327,7 +497,15 @@ pub(crate) fn print_report(r: &Report) {
                 None => println!("{} ok", line),
             }
         } else if let Some(fix) = c.fix {
-            println!("{} missing · {}", line, fix);
+            let verb = match c.state {
+                "missing" => "missing",
+                "invalid" => "invalid",
+                _ => "broken",
+            };
+            match &c.detail {
+                Some(d) => println!("{} {} · {} ({})", line, verb, fix, d),
+                None => println!("{} {} · {}", line, verb, fix),
+            }
         } else {
             println!("{} missing", line);
         }
@@ -445,6 +623,104 @@ mod tests {
     }
 
     #[test]
+    fn luaurc_without_language_mode_is_broken() {
+        let dir = temp_root("luaurc");
+        write_template(&dir);
+        std::fs::write(dir.join(".luaurc"), "{}\n").unwrap();
+        let r = inspect(&dir);
+        let luaurc = r.checks.iter().find(|c| c.label == ".luaurc").unwrap();
+        assert!(!luaurc.ok);
+        assert_eq!(luaurc.state, "broken");
+        assert_eq!(r.score, 90);
+    }
+
+    #[test]
+    fn states_distinguish_missing_invalid_broken() {
+        let dir = temp_root("states");
+        write_template(&dir);
+        std::fs::write(dir.join("default.project.json"), "{ not json").unwrap();
+        let r = inspect(&dir);
+        let project = r
+            .checks
+            .iter()
+            .find(|c| c.label == "default.project.json")
+            .unwrap();
+        assert_eq!(project.state, "invalid");
+        let paths = r
+            .checks
+            .iter()
+            .find(|c| c.label == "project paths")
+            .unwrap();
+        assert_eq!(paths.state, "invalid");
+        std::fs::write(dir.join(".selene.toml"), "not toml =").unwrap();
+        let r = inspect(&dir);
+        let selene = r.checks.iter().find(|c| c.label == ".selene.toml").unwrap();
+        assert_eq!(selene.state, "invalid");
+        std::fs::remove_file(dir.join(".selene.toml")).unwrap();
+        let r = inspect(&dir);
+        let selene = r.checks.iter().find(|c| c.label == ".selene.toml").unwrap();
+        assert_eq!(selene.state, "missing");
+    }
+
+    #[test]
+    fn luaurc_with_invalid_mode_is_broken() {
+        let dir = temp_root("luaurc-mode");
+        write_template(&dir);
+        std::fs::write(
+            dir.join(".luaurc"),
+            "{\"languageMode\": {\"src/\": \"Typo\"}}\n",
+        )
+        .unwrap();
+        let r = inspect(&dir);
+        let luaurc = r.checks.iter().find(|c| c.label == ".luaurc").unwrap();
+        assert!(!luaurc.ok);
+        assert_eq!(luaurc.state, "broken");
+    }
+
+    #[test]
+    fn aftman_bad_spec_format_is_broken() {
+        let dir = temp_root("aftman-format");
+        write_template(&dir);
+        std::fs::write(
+            dir.join("aftman.toml"),
+            "[tools]\nrojo = \"not-a-spec\"\nselene = \"Kampfkarren/selene@0.31.0\"\nstylua = \"JohnnyMorganz/StyLua@2.5.0\"\n",
+        )
+        .unwrap();
+        let r = inspect(&dir);
+        let aftman = r.checks.iter().find(|c| c.label == "aftman.toml").unwrap();
+        assert!(!aftman.ok);
+        assert_eq!(aftman.state, "broken");
+    }
+
+    #[test]
+    fn wally_without_package_is_broken() {
+        let dir = temp_root("wally-pkg");
+        write_template(&dir);
+        std::fs::write(dir.join("wally.toml"), "[dependencies]\n").unwrap();
+        let r = inspect(&dir);
+        let wally = r.checks.iter().find(|c| c.label == "wally.toml").unwrap();
+        assert!(!wally.ok);
+        assert_eq!(wally.state, "broken");
+        assert_eq!(r.score, 95);
+    }
+
+    #[test]
+    fn check_bails_on_missing_path() {
+        let dir = temp_root("missing-path");
+        let _ = std::fs::remove_dir_all(&dir);
+        let err = run(
+            &CheckArgs {
+                path: dir.to_str().unwrap().to_string(),
+                fix: false,
+                markdown: false,
+            },
+            false,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("does not exist"));
+    }
+
+    #[test]
     fn missing_aftman_tool_fails() {
         let dir = temp_root("noaftman");
         write_template(&dir);
@@ -478,6 +754,7 @@ mod tests {
         let md = render_markdown(&r);
         assert!(md.contains("| default.project.json | 15 | ✓ |"));
         assert!(md.contains("**grade: A (100/100)**"));
+        assert!(md.contains("info: ✓ README.md, ✓ .gitignore"));
     }
 
     #[test]

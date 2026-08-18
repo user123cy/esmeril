@@ -31,6 +31,9 @@ pub fn run(args: &FmtArgs, json: bool) -> anyhow::Result<FmtReport> {
     let root = Path::new(&args.path);
     let src = root.join("src");
     let src_str = src.display().to_string();
+    if !src.is_dir() {
+        anyhow::bail!("no src/ directory at '{}' - nothing to format", src_str);
+    }
 
     let mut tools = Vec::new();
     let mut broken = 0usize;

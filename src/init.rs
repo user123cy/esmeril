@@ -35,7 +35,13 @@ pub fn run(args: &InitArgs) -> anyhow::Result<()> {
         println!("  {} {}", "created".green(), rel);
     }
     println!();
-    println!("  next:  aftman install && rojo serve");
+    if args.lib {
+        println!(
+            "  next:  aftman install && wally publish (set your real scope in wally.toml first)"
+        );
+    } else {
+        println!("  next:  aftman install && rojo serve");
+    }
     println!("  check: esmeril check");
     Ok(())
 }
@@ -104,6 +110,24 @@ mod tests {
         .unwrap();
         let luaurc = std::fs::read_to_string(dir.join(".luaurc")).unwrap();
         assert!(luaurc.contains("Strict"));
+    }
+
+    #[test]
+    fn init_kebab_cases_wally_name() {
+        let dir = temp_root("init-slug");
+        let target = dir.join("My Game");
+        run(&InitArgs {
+            name: Some(target.to_str().unwrap().to_string()),
+            strict: false,
+            lib: false,
+            force: false,
+        })
+        .unwrap();
+        let wally = std::fs::read_to_string(target.join("wally.toml")).unwrap();
+        assert!(wally.contains("name = \"user/my-game\""), "{wally}");
+        let report = check::inspect(&target);
+        assert_eq!(report.score, 100);
+        assert_eq!(report.grade, 'A');
     }
 
     #[test]

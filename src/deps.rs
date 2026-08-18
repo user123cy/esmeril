@@ -76,7 +76,7 @@ fn cmp_pre(a: &str, b: &str) -> Ordering {
     Ordering::Equal
 }
 
-fn parse_version(raw: &str) -> Option<Version> {
+pub(crate) fn parse_version(raw: &str) -> Option<Version> {
     let raw = raw.trim();
     let (core, prerelease) = match raw.split_once('-') {
         Some((c, p)) => (c, Some(p.to_string())),
@@ -187,6 +187,9 @@ pub fn run(args: &DepsArgs, json: bool) -> anyhow::Result<DepsReport> {
     let mut broken = 0usize;
     for (section, alias, value) in &specs {
         let target = resolve(alias, value);
+        if !json && matches!(&target, Target::Registry { .. }) {
+            eprintln!("  checking {} ({section}) ...", alias.dimmed());
+        }
         let row = audit(&agent, &base, section, alias, value, &target, args.offline);
         match row.status {
             "outdated" => {
@@ -248,6 +251,8 @@ pub(crate) fn parse_specs(text: &str) -> Vec<(String, String, toml::Value)> {
             }
         }
     }
+    // Stable output regardless of the order in wally.toml.
+    out.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
     out
 }
 

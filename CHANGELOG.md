@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.0
+
+### Added
+- `esmeril check` now validates config content, not just parsing: `.luaurc` needs a `languageMode` of `NonStrict`/`Strict`, `aftman.toml` tools must be `owner/repo@tag` specs, and `wally.toml` needs a complete `[package]` (scoped name, version, https registry and a valid realm).
+- `esmeril check` now fails fast with a clear error when the target path does not exist (`--fix` still scaffolds it).
+- `esmeril check` now reports each failing check's state - `missing`, `invalid` or `broken` - so a config that exists but is wrong is no longer described as "missing". The `project paths` check also shows the offending `$path` targets.
+- `esmeril check --json` (with `--fix`) now includes the list of created files and configs that need manual attention in the report, via a `fix` field.
+- `esmeril deps` / `esmeril update` now report dependencies in a stable order (section, then name), regardless of the order in `wally.toml`, and print per-package progress on stderr while auditing the registry.
+- `esmeril init` now kebab-cases the project name for `wally.toml` (`esmeril init "My Game"` → `user/my-game`), so a scaffolded project always passes its own check; `--lib` output shows the publish hint.
+- `esmeril check --markdown` now includes the info rows (README, .gitignore, tools on PATH).
+- `esmeril fmt` fails with a clear message when `src/` is missing.
+
+### Changed
+- `esmeril doctor` falls back to stderr when a tool prints its version there (common on Windows).
+- The scaffold now pins StyLua 2.5.2 and uses `actions/checkout@v7` in the generated CI workflow.
+- Documented `esmeril check --markdown` and `esmeril completions` in the README.
+
 ## 0.1.1
 
 ### Changed

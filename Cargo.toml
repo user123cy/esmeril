@@ -1,8 +1,8 @@
 [package]
 name = "esmeril"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
-description = "Scaffold, check and inspect Roblox Luau projects"
+description = "One binary to scaffold, check and maintain Roblox Luau projects: init, check, deps, update, fmt, build and doctor"
 license = "MIT"
 readme = "README.md"
 homepage = "https://github.com/user123cy/esmeril"
