@@ -5,7 +5,7 @@
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![CI](https://github.com/user123cy/esmeril/actions/workflows/ci.yml/badge.svg)
 
-Scaffold, check and inspect Roblox Luau projects from the terminal.
+Scaffold, validate, format, audit and build Roblox Luau projects from the terminal.
 
 Eight commands, one binary:
 

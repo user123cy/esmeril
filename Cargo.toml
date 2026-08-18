@@ -2,7 +2,7 @@
 name = "esmeril"
 version = "0.2.0"
 edition = "2024"
-description = "One binary to scaffold, check and maintain Roblox Luau projects: init, check, deps, update, fmt, build and doctor"
+description = "Scaffold, validate, format, audit and build Roblox Luau projects from the terminal"
 license = "MIT"
 readme = "README.md"
 homepage = "https://github.com/user123cy/esmeril"

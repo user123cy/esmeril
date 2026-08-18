@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand};
 #[command(
     name = "esmeril",
     version,
-    about = "Scaffold, check and inspect Roblox Luau projects"
+    about = "Scaffold, validate, format, audit and build Roblox Luau projects from the terminal"
 )]
 pub struct Cli {
     #[command(subcommand)]
